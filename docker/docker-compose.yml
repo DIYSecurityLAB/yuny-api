@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: yuny-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: yuny
+      POSTGRES_PASSWORD: yuny123
+      POSTGRES_DB: yuny_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - yuny-network
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: yuny-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@yuny.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+    networks:
+      - yuny-network
+
+volumes:
+  postgres_data:
+
+networks:
+  yuny-network:
+    driver: bridge
