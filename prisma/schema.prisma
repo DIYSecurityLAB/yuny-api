@@ -20,8 +20,9 @@ model Usuario {
   data_criacao  DateTime       @default(now()) @db.Timestamp(6)
   ultimo_login  DateTime?      @db.Timestamp(6)
 
-  refreshTokens RefreshToken[]
-  apiKeys       ApiKey[]
+  refreshTokens          RefreshToken[]
+  apiKeys               ApiKey[]
+  passwordResetTokens   PasswordResetToken[]
 
   @@map("usuarios")
 }
@@ -188,4 +189,54 @@ enum ComplianceLevel {
   LGPD
   SOX
   HIPAA
+}
+
+// Password Reset Models
+model PasswordResetToken {
+  id         String   @id @default(uuid()) @db.Uuid
+  token      String   @unique @db.VarChar(64)
+  user_id    String   @db.Uuid
+  expires_at DateTime @db.Timestamp(6)
+  used       Boolean  @default(false)
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  
+  usuario Usuario @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+  
+  @@map("password_reset_tokens")
+}
+
+model PasswordResetAttempt {
+  id           String   @id @default(uuid()) @db.Uuid
+  identifier   String   @db.VarChar(255)
+  ip_address   String   @db.VarChar(45)
+  user_agent   String   @db.Text
+  success      Boolean
+  attempted_at DateTime @default(now()) @db.Timestamp(6)
+  
+  @@map("password_reset_attempts")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  action     String   @db.VarChar(100)
+  user_id    String?  @db.Uuid
+  metadata   Json?
+  ip_address String?  @db.VarChar(45)
+  user_agent String?  @db.Text
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  
+  @@map("audit_logs")
+}
+
+// Password Reset Enums
+enum PasswordResetMethod {
+  EMAIL
+  SMS
+}
+
+enum PasswordResetStatus {
+  PENDING
+  USED
+  EXPIRED
+  REVOKED
 }

@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, UnauthorizedException, Logger } from '@nestjs/common';
+import { Injectable, ConflictException, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
@@ -8,7 +8,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { UserResponseDto, LoginResponseDto } from './dto/response.dto';
+import { EsqueceuSenhaDto } from './dto/esqueceu-senha.dto';
+import { RedefinirSenhaDto } from './dto/redefinir-senha.dto';
 import { SmsService } from './sms.service';
+import { EmailService } from '../email/application/email.service';
 
 @Injectable()
 export class AuthService {
@@ -19,6 +22,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly smsService: SmsService,
+    private readonly emailService: EmailService,
   ) {}
 
   async registrar(registerDto: RegisterDto): Promise<UserResponseDto> {
@@ -175,5 +179,99 @@ export class AuthService {
       where: { token: refreshToken },
       data: { is_revoked: true },
     });
+  }
+
+  async esqueceuSenha(esqueceuSenhaDto: EsqueceuSenhaDto): Promise<{ message: string }> {
+    const { identifier } = esqueceuSenhaDto;
+
+    this.logger.log(`Solicitação de reset de senha para: ${identifier.substring(0, 3)}***`);
+
+    // Buscar usuário por CPF, email ou telefone
+    const usuario = await this.prisma.usuario.findFirst({
+      where: {
+        OR: [
+          { cpf: identifier },
+          { email: identifier },
+          { telefone: identifier },
+        ],
+      },
+    });
+
+    if (!usuario) {
+      // Por segurança, não revelar se o usuário existe
+      this.logger.warn(`Tentativa de reset para identificador inexistente: ${identifier.substring(0, 3)}***`);
+      return { message: 'Se o usuário existir, um email será enviado com as instruções.' };
+    }
+
+    // Invalidar tokens anteriores do usuário
+    await this.prisma.passwordResetToken.updateMany({
+      where: { user_id: usuario.user_id },
+      data: { used: true },
+    });
+
+    // Gerar token único
+    const resetToken = uuidv4();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutos
+
+    // Salvar token no banco
+    await this.prisma.passwordResetToken.create({
+      data: {
+        token: resetToken,
+        user_id: usuario.user_id,
+        expires_at: expiresAt,
+      },
+    });
+
+    // Enviar email
+    await this.emailService.sendPasswordResetEmail(usuario.email, resetToken, usuario.nome);
+
+    this.logger.log(`Reset de senha solicitado com sucesso para usuário: ${usuario.user_id}`);
+
+    return { message: 'Se o usuário existir, um email será enviado com as instruções.' };
+  }
+
+  async redefinirSenha(redefinirSenhaDto: RedefinirSenhaDto): Promise<{ message: string }> {
+    const { token, novaSenha } = redefinirSenhaDto;
+
+    this.logger.log(`Tentativa de redefinição de senha com token: ${token.substring(0, 8)}***`);
+
+    // Buscar e validar token
+    const resetToken = await this.prisma.passwordResetToken.findFirst({
+      where: {
+        token,
+        used: false,
+        expires_at: { gte: new Date() },
+      },
+    });
+
+    if (!resetToken) {
+      this.logger.warn(`Token inválido ou expirado: ${token.substring(0, 8)}***`);
+      throw new BadRequestException('Token inválido ou expirado');
+    }
+
+    // Hash da nova senha
+    const senhaHash = await bcrypt.hash(novaSenha, 12);
+
+    // Atualizar senha do usuário
+    await this.prisma.usuario.update({
+      where: { user_id: resetToken.user_id },
+      data: { senhaHash },
+    });
+
+    // Marcar token como usado
+    await this.prisma.passwordResetToken.update({
+      where: { id: resetToken.id },
+      data: { used: true },
+    });
+
+    // Revogar todos os refresh tokens do usuário (logout forçado)
+    await this.prisma.refreshToken.updateMany({
+      where: { user_id: resetToken.user_id },
+      data: { is_revoked: true },
+    });
+
+    this.logger.log(`Senha redefinida com sucesso para usuário: ${resetToken.user_id}`);
+
+    return { message: 'Senha redefinida com sucesso. Faça login com sua nova senha.' };
   }
 }
