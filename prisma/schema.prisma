@@ -20,7 +20,9 @@ model Usuario {
   data_criacao  DateTime       @default(now()) @db.Timestamp(6)
   ultimo_login  DateTime?      @db.Timestamp(6)
 
-  refreshTokens RefreshToken[]
+  refreshTokens          RefreshToken[]
+  apiKeys               ApiKey[]
+  passwordResetTokens   PasswordResetToken[]
 
   @@map("usuarios")
 }
@@ -36,4 +38,205 @@ model RefreshToken {
   usuario Usuario @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
 
   @@map("refresh_tokens")
+}
+
+// API Key Models para Marketplace
+model ApiKey {
+  id                String   @id @default(uuid()) @db.Uuid
+  key_id            String   @unique @db.VarChar(36) // UUID v4 para identificação
+  secret_hash       String   @db.VarChar(255) // Hash HMAC-SHA256 do secret
+  name              String   @db.VarChar(255) // Nome descritivo da API key
+  user_type         UserType // Tipo de usuário (merchant, consumer, platform, admin)
+  status            ApiKeyStatus @default(ACTIVE)
+  rate_limit_tier   RateLimitTier @default(BASIC)
+  
+  // Tenant and Context
+  tenant_id         String?  @db.Uuid // Multi-tenant support
+  store_id          String?  @db.Uuid // Para merchants
+  consumer_id       String?  @db.Uuid // Para consumers
+  marketplace_context String? @db.VarChar(100) // Contexto específico do marketplace
+  
+  // Geographic and Compliance
+  allowed_regions   String[] // Regiões permitidas para uso
+  compliance_level  ComplianceLevel @default(BASIC)
+  
+  // Security
+  allowed_ips       String[] // Whitelist de IPs
+  webhook_signature_secret String? @db.VarChar(255) // Para validação de webhooks
+  
+  // Lifecycle
+  expires_at        DateTime? @db.Timestamp(6)
+  created_at        DateTime @default(now()) @db.Timestamp(6)
+  updated_at        DateTime @updatedAt @db.Timestamp(6)
+  last_used_at      DateTime? @db.Timestamp(6)
+  
+  // Relations
+  user_id           String   @db.Uuid
+  usuario           Usuario  @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+  permissions       ApiKeyPermission[]
+  usage_logs        ApiKeyUsageLog[]
+  rate_limits       ApiKeyRateLimit[]
+
+  @@index([key_id])
+  @@index([user_type, tenant_id])
+  @@index([store_id])
+  @@index([consumer_id])
+  @@index([expires_at])
+  @@map("api_keys")
+}
+
+model ApiKeyPermission {
+  id            String @id @default(uuid()) @db.Uuid
+  api_key_id    String @db.Uuid
+  permission    String @db.VarChar(100) // ex: coupon.create, analytics.view
+  resource_type String? @db.VarChar(50) // ex: electronics, food, travel
+  granted_at    DateTime @default(now()) @db.Timestamp(6)
+  
+  api_key ApiKey @relation(fields: [api_key_id], references: [id], onDelete: Cascade)
+
+  @@unique([api_key_id, permission, resource_type])
+  @@index([permission])
+  @@map("api_key_permissions")
+}
+
+model ApiKeyUsageLog {
+  id                String   @id @default(uuid()) @db.Uuid
+  api_key_id        String   @db.Uuid
+  
+  // Request Info
+  endpoint          String   @db.VarChar(255)
+  http_method       String   @db.VarChar(10)
+  status_code       Int
+  response_time_ms  Int?
+  
+  // Context Info
+  ip_address        String   @db.VarChar(45) // IPv6 support
+  user_agent        String?  @db.Text
+  request_id        String?  @db.VarChar(36)
+  
+  // Business Context
+  transaction_value Decimal? @db.Decimal(10, 2)
+  currency          String?  @db.VarChar(3)
+  merchant_id       String?  @db.Uuid
+  coupon_category   String?  @db.VarChar(50)
+  geographic_location String? @db.VarChar(100)
+  
+  // Security & Fraud Detection
+  is_suspicious     Boolean  @default(false)
+  fraud_score       Float?   @db.Real
+  security_flags    String[] // Array de flags de segurança
+  
+  // Timing
+  timestamp         DateTime @default(now()) @db.Timestamp(6)
+  
+  api_key ApiKey @relation(fields: [api_key_id], references: [id], onDelete: Cascade)
+
+  @@index([api_key_id, timestamp])
+  @@index([endpoint, timestamp])
+  @@index([merchant_id, timestamp])
+  @@index([is_suspicious])
+  @@index([timestamp]) // Para limpeza de logs antigos
+  @@map("api_key_usage_logs")
+}
+
+model ApiKeyRateLimit {
+  id                String @id @default(uuid()) @db.Uuid
+  api_key_id        String @db.Uuid
+  endpoint_pattern  String @db.VarChar(255) // Pattern de endpoint (ex: /api/coupons/*)
+  requests_per_minute Int  @default(60)
+  requests_per_hour   Int  @default(1000)
+  requests_per_day    Int  @default(10000)
+  burst_limit         Int  @default(10) // Limite de burst
+  
+  created_at        DateTime @default(now()) @db.Timestamp(6)
+  updated_at        DateTime @updatedAt @db.Timestamp(6)
+  
+  api_key ApiKey @relation(fields: [api_key_id], references: [id], onDelete: Cascade)
+
+  @@unique([api_key_id, endpoint_pattern])
+  @@map("api_key_rate_limits")
+}
+
+// Enums
+enum UserType {
+  MERCHANT
+  CONSUMER
+  PLATFORM
+  ADMIN
+  WEBHOOK
+  PARTNER
+}
+
+enum ApiKeyStatus {
+  ACTIVE
+  INACTIVE
+  REVOKED
+  EXPIRED
+  SUSPENDED
+}
+
+enum RateLimitTier {
+  BASIC
+  PREMIUM
+  ENTERPRISE
+  UNLIMITED
+}
+
+enum ComplianceLevel {
+  BASIC
+  PCI_DSS
+  GDPR
+  LGPD
+  SOX
+  HIPAA
+}
+
+// Password Reset Models
+model PasswordResetToken {
+  id         String   @id @default(uuid()) @db.Uuid
+  token      String   @unique @db.VarChar(64)
+  user_id    String   @db.Uuid
+  expires_at DateTime @db.Timestamp(6)
+  used       Boolean  @default(false)
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  
+  usuario Usuario @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+  
+  @@map("password_reset_tokens")
+}
+
+model PasswordResetAttempt {
+  id           String   @id @default(uuid()) @db.Uuid
+  identifier   String   @db.VarChar(255)
+  ip_address   String   @db.VarChar(45)
+  user_agent   String   @db.Text
+  success      Boolean
+  attempted_at DateTime @default(now()) @db.Timestamp(6)
+  
+  @@map("password_reset_attempts")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  action     String   @db.VarChar(100)
+  user_id    String?  @db.Uuid
+  metadata   Json?
+  ip_address String?  @db.VarChar(45)
+  user_agent String?  @db.Text
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  
+  @@map("audit_logs")
+}
+
+// Password Reset Enums
+enum PasswordResetMethod {
+  EMAIL
+  SMS
+}
+
+enum PasswordResetStatus {
+  PENDING
+  USED
+  EXPIRED
+  REVOKED
 }

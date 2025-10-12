@@ -11,9 +11,13 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { EsqueceuSenhaDto } from './dto/esqueceu-senha.dto';
+import { RedefinirSenhaDto } from './dto/redefinir-senha.dto';
 import { UserResponseDto, LoginResponseDto, RefreshResponseDto } from './dto/response.dto';
+import { RequireApiKey } from '../api-key/infrastructure/decorators/api-key.decorators';
 
 @Controller('auth')
+@RequireApiKey() // Requer API key para todos os endpoints de autenticação
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
 
@@ -65,5 +69,25 @@ export class AuthController {
       message: 'Token renovado com sucesso',
       data,
     };
+  }
+
+  @Post('esqueceu-senha')
+  @HttpCode(HttpStatus.OK)
+  async esqueceuSenha(@Body() esqueceuSenhaDto: EsqueceuSenhaDto): Promise<{
+    message: string;
+  }> {
+    this.logger.log(`Solicitação de reset de senha para: ${esqueceuSenhaDto.identifier.substring(0, 3)}***`);
+    
+    return this.authService.esqueceuSenha(esqueceuSenhaDto);
+  }
+
+  @Post('redefinir-senha')
+  @HttpCode(HttpStatus.OK)
+  async redefinirSenha(@Body() redefinirSenhaDto: RedefinirSenhaDto): Promise<{
+    message: string;
+  }> {
+    this.logger.log(`Tentativa de redefinição de senha com token: ${redefinirSenhaDto.token.substring(0, 8)}***`);
+    
+    return this.authService.redefinirSenha(redefinirSenhaDto);
   }
 }
