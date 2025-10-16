@@ -1,4 +1,5 @@
 import { Injectable, Inject } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Decimal } from 'decimal.js';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -41,7 +42,8 @@ export class CreateOrderUseCase {
     @Inject(POINTS_TRANSACTION_REPOSITORY) private readonly pointsTransactionRepository: IPointsTransactionRepository,
     @Inject(ORDER_STATUS_HISTORY_REPOSITORY) private readonly orderStatusHistoryRepository: IOrderStatusHistoryRepository,
     @Inject(USER_BALANCE_REPOSITORY) private readonly userBalanceRepository: IUserBalanceRepository,
-    @Inject(ALFRED_PAY_SERVICE) private readonly alfredPayService: IAlfredPayService
+    @Inject(ALFRED_PAY_SERVICE) private readonly alfredPayService: IAlfredPayService,
+    private readonly configService: ConfigService
   ) {}
 
   async execute(request: CreateOrderRequest): Promise<CreateOrderResponse> {
@@ -155,9 +157,8 @@ export class CreateOrderUseCase {
           cryptoAmount: calculationDetails.pointsAmount,
           paymentMethod: 'PIX',
           type: 'BUY',
-          walletAddress: 'YUNY_INTERNAL_WALLET', // Carteira interna do YunY
-          network: 'polygon',
-          description: `Purchase of ${calculationDetails.pointsAmount.toString()} YunY Points`,
+          walletAddress: this.configService.get<string>('YUNY_INTERNAL_WALLET'), // Carteira interna do YunY
+          network: 'onchain',
           externalId: orderId
         });
 
