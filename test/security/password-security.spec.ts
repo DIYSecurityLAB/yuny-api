@@ -185,7 +185,7 @@ describe('Password Security Tests', () => {
         expires_at: new Date(Date.now() + 15 * 60 * 1000),
       });
 
-      const result = await service.esqueceuSenha({ email: 'test@domain.com' });
+      const result = await service.esqueceuSenha({ identifier: 'test@domain.com' });
 
       expect(result.message).toBe('Se o usuário existir, um email será enviado com as instruções.');
       expect(prismaService.passwordResetToken.create).toHaveBeenCalled();
@@ -207,7 +207,7 @@ describe('Password Security Tests', () => {
         expires_at: new Date(Date.now() + 15 * 60 * 1000),
       });
 
-      await service.esqueceuSenha({ email: 'test@domain.com' });
+      await service.esqueceuSenha({ identifier: 'test@domain.com' });
 
       const createCall = (prismaService.passwordResetToken.create as jest.Mock).mock.calls[0][0];
       const expiresAt = createCall.data.expires_at;
@@ -256,7 +256,7 @@ describe('Password Security Tests', () => {
         token: 'expired-token',
         user_id: 'test-user-id',
         expires_at: new Date(Date.now() - 60 * 1000), // Expirado há 1 minuto
-        created_at: new Date(Date.-now() - 30 * 60 * 1000),
+        created_at: new Date(Date.now() - 30 * 60 * 1000),
       };
 
       (prismaService.passwordResetToken.findFirst as jest.Mock).mockResolvedValue(expiredTokenData);
@@ -300,7 +300,7 @@ describe('Password Security Tests', () => {
 
       const promises = [];
       for (let i = 0; i < 10; i++) {
-        promises.push(service.esqueceuSenha({ email: 'test@domain.com' }));
+        promises.push(service.esqueceuSenha({ identifier: 'test@domain.com' }));
       }
 
       const results = await Promise.all(promises);
@@ -335,11 +335,11 @@ describe('Password Security Tests', () => {
     it('should not reveal if user exists during password reset', async () => {
       // Teste com usuário existente
       (prismaService.usuario.findUnique as jest.Mock).mockResolvedValue(mockUser);
-      const result1 = await service.esqueceuSenha({ email: 'existing@domain.com' });
+      const result1 = await service.esqueceuSenha({ identifier: 'existing@domain.com' });
 
       // Teste com usuário inexistente
       (prismaService.usuario.findUnique as jest.Mock).mockResolvedValue(null);
-      const result2 = await service.esqueceuSenha({ email: 'nonexistent@domain.com' });
+      const result2 = await service.esqueceuSenha({ identifier: 'nonexistent@domain.com' });
 
       // Ambos devem retornar a mesma mensagem
       expect(result1.message).toBe(result2.message);
@@ -353,12 +353,12 @@ describe('Password Security Tests', () => {
       );
 
       try {
-        await service.esqueceuSenha({ email: 'test@domain.com' });
+        await service.esqueceuSenha({ identifier: 'test@domain.com' });
       } catch (error) {
         // Verificar se informações sensíveis não são expostas
-        expect(error.message).not.toContain('password');
-        expect(error.message).not.toContain('postgresql://');
-        expect(error.message).not.toContain('user:');
+        expect(error).not.toContain('password');
+        expect(error).not.toContain('postgresql://');
+        expect(error).not.toContain('user:');
       }
     });
   });
@@ -382,7 +382,7 @@ describe('Password Security Tests', () => {
 
       for (const invalidEmail of invalidEmails) {
         try {
-          await service.esqueceuSenha({ email: invalidEmail as string });
+          await service.esqueceuSenha({ identifier: invalidEmail as string });
           // Se não lançar erro, pelo menos deveria retornar mensagem padrão
         } catch (error) {
           // Erro de validação é aceitável
@@ -446,7 +446,7 @@ describe('Password Security Tests', () => {
             novaSenha: 'ValidPassword123!',
           });
         } catch (error) {
-          expect(error.message).toBe('Token inválido ou expirado');
+          expect((error as Error).message).toBe('Token inválido ou expirado');
         }
       }
     });
@@ -498,7 +498,7 @@ describe('Password Security Tests', () => {
         expires_at: new Date(Date.now() + 15 * 60 * 1000),
       });
 
-      await service.esqueceuSenha({ email: 'test@domain.com' });
+      await service.esqueceuSenha({ identifier: 'test@domain.com' });
 
       // Verificar se logs não contêm informações sensíveis
       const logCalls = consoleSpy.mock.calls.flat();
@@ -535,3 +535,7 @@ describe('Password Security Tests', () => {
     });
   });
 });
+
+function now() {
+  throw new Error('Function not implemented.');
+}

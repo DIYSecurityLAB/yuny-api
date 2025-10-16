@@ -7,13 +7,16 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { SmsService } from './sms.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { PrismaModule } from '../prisma/prisma.module';
 import { EmailModule } from '../email/email.module';
+import { ApiKeyModule } from '../api-key/api-key.module';
 
 @Module({
   imports: [
     PrismaModule,
     EmailModule,
+    ApiKeyModule,
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -27,7 +30,7 @@ import { EmailModule } from '../email/email.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, SmsService, JwtStrategy],
-  exports: [AuthService],
+  providers: [AuthService, SmsService, JwtStrategy, JwtAuthGuard],
+  exports: [AuthService, JwtAuthGuard, JwtStrategy],
 })
 export class AuthModule {}
