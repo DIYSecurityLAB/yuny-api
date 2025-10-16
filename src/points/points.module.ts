@@ -1,22 +1,15 @@
 import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
-
-// Prisma
 import { PrismaModule } from '../prisma/prisma.module';
-
-// Auth
 import { AuthModule } from '../auth/auth.module';
-
-// Use Cases
+import { ApiKeyModule } from '../api-key/api-key.module';
 import {
   CreateOrderUseCase,
   CheckOrderStatusUseCase,
   CreditPointsUseCase,
   GetTransactionHistoryUseCase
 } from './application/use-cases';
-
-// Repository Implementations
 import {
   PrismaUserRepository,
   PrismaUserBalanceRepository,
@@ -24,14 +17,8 @@ import {
   PrismaPointsTransactionRepository,
   PrismaOrderStatusHistoryRepository
 } from './infrastructure/repositories';
-
-// Services
 import { AlfredPayService } from './infrastructure/services';
-
-// Controllers
 import { PointsController } from './presentation/controllers';
-
-// DI Tokens
 import {
   USER_REPOSITORY,
   USER_BALANCE_REPOSITORY,
@@ -49,19 +36,17 @@ import {
     }),
     ConfigModule,
     PrismaModule,
-    AuthModule
+    AuthModule,
+    ApiKeyModule
   ],
   controllers: [
     PointsController
   ],
   providers: [
-    // Use Cases
     CreateOrderUseCase,
     CheckOrderStatusUseCase,
     CreditPointsUseCase,
     GetTransactionHistoryUseCase,
-
-    // Repository Implementations bound to Interfaces
     {
       provide: USER_REPOSITORY,
       useClass: PrismaUserRepository
@@ -82,28 +67,21 @@ import {
       provide: ORDER_STATUS_HISTORY_REPOSITORY,
       useClass: PrismaOrderStatusHistoryRepository
     },
-
-    // Service Implementations
     {
       provide: ALFRED_PAY_SERVICE,
       useClass: AlfredPayService
     }
   ],
   exports: [
-    // Export use cases for external modules if needed
     CreateOrderUseCase,
     CheckOrderStatusUseCase,
     CreditPointsUseCase,
     GetTransactionHistoryUseCase,
-
-    // Export repository tokens for external modules if needed
     USER_REPOSITORY,
     USER_BALANCE_REPOSITORY,
     ORDER_REPOSITORY,
     POINTS_TRANSACTION_REPOSITORY,
     ORDER_STATUS_HISTORY_REPOSITORY,
-
-    // Export service tokens for external modules if needed
     ALFRED_PAY_SERVICE
   ]
 })
