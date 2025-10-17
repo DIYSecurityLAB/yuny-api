@@ -8,23 +8,27 @@ import {
   CreateOrderUseCase,
   CheckOrderStatusUseCase,
   CreditPointsUseCase,
-  GetTransactionHistoryUseCase
+  GetTransactionHistoryUseCase,
+  ValidateWebhookSignatureUseCase,
+  ProcessAlfredWebhookUseCase
 } from './application/use-cases';
 import {
   PrismaUserRepository,
   PrismaUserBalanceRepository,
   PrismaOrderRepository,
   PrismaPointsTransactionRepository,
-  PrismaOrderStatusHistoryRepository
+  PrismaOrderStatusHistoryRepository,
+  PrismaWebhookLogRepository
 } from './infrastructure/repositories';
 import { AlfredPayService } from './infrastructure/services';
-import { PointsController } from './presentation/controllers';
+import { PointsController, WebhookController } from './presentation/controllers';
 import {
   USER_REPOSITORY,
   USER_BALANCE_REPOSITORY,
   ORDER_REPOSITORY,
   POINTS_TRANSACTION_REPOSITORY,
   ORDER_STATUS_HISTORY_REPOSITORY,
+  WEBHOOK_LOG_REPOSITORY,
   ALFRED_PAY_SERVICE
 } from './points.tokens';
 
@@ -40,13 +44,19 @@ import {
     ApiKeyModule
   ],
   controllers: [
-    PointsController
+    PointsController,
+    WebhookController
   ],
   providers: [
+    // Use Cases
     CreateOrderUseCase,
     CheckOrderStatusUseCase,
     CreditPointsUseCase,
     GetTransactionHistoryUseCase,
+    ValidateWebhookSignatureUseCase,
+    ProcessAlfredWebhookUseCase,
+
+    // Repository Implementations
     {
       provide: USER_REPOSITORY,
       useClass: PrismaUserRepository
@@ -66,6 +76,10 @@ import {
     {
       provide: ORDER_STATUS_HISTORY_REPOSITORY,
       useClass: PrismaOrderStatusHistoryRepository
+    },
+    {
+      provide: WEBHOOK_LOG_REPOSITORY,
+      useClass: PrismaWebhookLogRepository
     },
     {
       provide: ALFRED_PAY_SERVICE,

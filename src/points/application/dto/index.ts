@@ -27,12 +27,15 @@ export interface CheckOrderStatusRequest {
 
 export interface CheckOrderStatusResponse {
   orderId: string;
+  currentStatus: string;
   status: string;
   statusChanged: boolean;
   alfredTransactionId: string | null;
   pointsAmount: Decimal;
   requestedAmount: Decimal;
   totalAmount: Decimal;
+  updatedAt: Date;
+  lastWebhookAt?: Date;
 }
 
 export interface CreditPointsRequest {

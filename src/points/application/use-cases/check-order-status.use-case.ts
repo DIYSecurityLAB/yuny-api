@@ -1,13 +1,16 @@
 import { Injectable, Inject } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { v4 as uuidv4 } from 'uuid';
 
 import {
   IOrderRepository,
-  IOrderStatusHistoryRepository
+  IOrderStatusHistoryRepository,
+  IWebhookLogRepository
 } from '../../domain/repositories';
 import {
   ORDER_REPOSITORY,
   ORDER_STATUS_HISTORY_REPOSITORY,
+  WEBHOOK_LOG_REPOSITORY,
   ALFRED_PAY_SERVICE
 } from '../../points.tokens';
 import { OrderStatusHistory } from '../../domain/entities';
@@ -20,7 +23,9 @@ export class CheckOrderStatusUseCase {
   constructor(
     @Inject(ORDER_REPOSITORY) private readonly orderRepository: IOrderRepository,
     @Inject(ORDER_STATUS_HISTORY_REPOSITORY) private readonly orderStatusHistoryRepository: IOrderStatusHistoryRepository,
-    @Inject(ALFRED_PAY_SERVICE) private readonly alfredPayService: IAlfredPayService
+    @Inject(WEBHOOK_LOG_REPOSITORY) private readonly webhookLogRepository: IWebhookLogRepository,
+    @Inject(ALFRED_PAY_SERVICE) private readonly alfredPayService: IAlfredPayService,
+    private readonly configService: ConfigService
   ) {}
 
   async execute(request: CheckOrderStatusRequest): Promise<CheckOrderStatusResponse> {
@@ -34,7 +39,35 @@ export class CheckOrderStatusUseCase {
     let updatedOrder = order;
     const currentStatus = order.status;
 
-    // 2. Se a ordem tem transação no Alfred, consultar status
+    // 2. Verificar se webhook recente foi processado (fallback logic)
+    const webhookFallbackEnabled = this.configService.get<boolean>('WEBHOOK_FALLBACK_ENABLED', true);
+    
+    if (webhookFallbackEnabled && order.alfredTransactionId) {
+      const recentWebhook = await this.webhookLogRepository.findLastValidWebhookByExternalId(order.id);
+      
+      if (recentWebhook && recentWebhook.isProcessedRecently(5)) { // 5 minutos
+        console.info('[CheckOrderStatus] Skipping polling - recent webhook found', {
+          orderId: order.id,
+          webhookProcessedAt: recentWebhook.processedAt,
+          webhookStatus: recentWebhook.status
+        });
+        
+        return {
+          orderId: order.id,
+          currentStatus: order.status,
+          status: order.status,
+          alfredTransactionId: order.alfredTransactionId,
+          statusChanged: false,
+          pointsAmount: order.pointsAmount,
+          requestedAmount: order.requestedAmount,
+          totalAmount: order.totalAmount,
+          updatedAt: order.updatedAt,
+          lastWebhookAt: recentWebhook.processedAt
+        };
+      }
+    }
+
+    // 3. Se a ordem tem transação no Alfred, consultar status
     if (order.alfredTransactionId) {
       try {
         const alfredStatus = await this.alfredPayService.getTransactionStatus(order.alfredTransactionId);
@@ -134,12 +167,14 @@ export class CheckOrderStatusUseCase {
 
     return {
       orderId: updatedOrder.id,
+      currentStatus: updatedOrder.status,
       status: updatedOrder.status,
       statusChanged,
       alfredTransactionId: updatedOrder.alfredTransactionId,
       pointsAmount: updatedOrder.pointsAmount,
       requestedAmount: updatedOrder.requestedAmount,
-      totalAmount: updatedOrder.totalAmount
+      totalAmount: updatedOrder.totalAmount,
+      updatedAt: updatedOrder.updatedAt
     };
   }
 

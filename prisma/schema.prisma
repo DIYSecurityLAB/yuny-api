@@ -327,6 +327,31 @@ model OrderStatusHistory {
   @@map("order_status_history")
 }
 
+model WebhookLog {
+  id                String    @id @default(uuid()) @db.Uuid
+  webhook_id        String?   @db.VarChar(255) // ID do webhook para idempotência
+  transaction_id    String    @db.VarChar(255) // ID da transação no AlfredPay
+  external_id       String    @db.VarChar(255) // Nosso orderId
+  status            String    @db.VarChar(50)  // Status da transação
+  previous_status   String?   @db.VarChar(50)  // Status anterior
+  payload           Json      // Payload completo do webhook
+  signature         String    @db.VarChar(255) // Assinatura HMAC
+  processed_at      DateTime  @default(now()) @db.Timestamp(6)
+  is_valid          Boolean   @default(false)
+  error_message     String?   @db.Text // Mensagem de erro se houver
+  processing_time_ms Int?     // Tempo de processamento em ms
+  created_at        DateTime  @default(now()) @db.Timestamp(6)
+
+  // Índices para performance
+  @@index([transaction_id])
+  @@index([external_id])
+  @@index([webhook_id])
+  @@index([processed_at])
+  @@index([is_valid])
+  @@index([created_at])
+  @@map("webhook_logs")
+}
+
 // Points System Enums
 enum OrderStatus {
   PENDING
