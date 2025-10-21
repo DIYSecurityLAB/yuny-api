@@ -20,6 +20,17 @@ export class ValidateWebhookSignatureUseCase {
 
   execute(request: ValidateSignatureRequest): ValidateSignatureResponse {
     try {
+      // Em desenvolvimento, aceitar assinatura simulada
+      const nodeEnv = this.configService.get<string>('NODE_ENV', 'production');
+      if (nodeEnv === 'development' && request.signature === 'simulated-signature-for-development') {
+        console.info('[ValidateWebhookSignature] ✅ Accepting simulated signature in development mode');
+        return {
+          isValid: true,
+          reason: 'Development mode - simulated signature accepted',
+          algorithm: 'none'
+        };
+      }
+
       const webhookSecret = this.configService.get<string>('ALFRED_PAY_WEBHOOK_SECRET');
       
       if (!webhookSecret) {

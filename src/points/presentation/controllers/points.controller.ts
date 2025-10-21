@@ -70,14 +70,15 @@ export class PointsController {
     @Request() req: any
   ): Promise<CreateOrderResponseDto> {
     try {
-      const userId = req.user?.sub || req.user?.id;
+      // JWT Strategy retorna objeto usuario com user_id
+      const userId = req.user?.user_id;
       if (!userId) {
         throw new HttpException('User ID not found in token', HttpStatus.UNAUTHORIZED);
       }
 
       const result = await this.createOrderUseCase.execute({
         userId,
-        requestedAmount: createOrderDto.requestedAmount,
+        requestedAmount: new Decimal(createOrderDto.requestedAmount),
         paymentMethod: createOrderDto.paymentMethod,
         description: createOrderDto.description
       });

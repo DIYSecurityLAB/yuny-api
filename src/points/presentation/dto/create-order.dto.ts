@@ -1,7 +1,6 @@
 import { IsNumber, IsEnum, IsOptional, IsString, IsUUID, Min, Max } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type, Transform } from 'class-transformer';
-import { Decimal } from 'decimal.js';
+import { Type } from 'class-transformer';
 import { PaymentMethod } from '../../domain/enums';
 
 export class CreateOrderDto {
@@ -11,12 +10,11 @@ export class CreateOrderDto {
     minimum: 1,
     maximum: 10000
   })
-  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsNumber({ maxDecimalPlaces: 2 }, { message: 'requestedAmount deve ser um número válido' })
   @Min(1, { message: 'Valor mínimo é R$ 1,00' })
   @Max(10000, { message: 'Valor máximo é R$ 10.000,00' })
   @Type(() => Number)
-  @Transform(({ value }) => new Decimal(value))
-  requestedAmount: Decimal;
+  requestedAmount: number;
 
   @ApiProperty({
     description: 'Método de pagamento',

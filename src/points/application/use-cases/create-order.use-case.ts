@@ -57,16 +57,10 @@ export class CreateOrderUseCase {
       throw new Error('User is not active');
     }
 
-    // 2. Verificar se não há ordens pendentes para o mesmo usuário
-    const pendingOrders = await this.orderRepository.findPendingOrdersByUserId(request.userId);
-    if (pendingOrders.length > 0) {
-      throw new Error('User already has a pending order');
-    }
-
-    // 3. Calcular valores
+    // 2. Calcular valores
     const calculationDetails = PointsCalculationService.calculatePurchaseDetails(request.requestedAmount);
 
-    // 4. Criar ordem
+    // 3. Criar ordem
     const orderId = uuidv4();
     const now = new Date();
 
@@ -86,7 +80,7 @@ export class CreateOrderUseCase {
       updatedAt: now
     });
 
-    // 5. Criar transação de pontos pendente
+    // 4. Criar transação de pontos pendente
     const transactionId = uuidv4();
     const pointsTransaction = new PointsTransaction({
       id: transactionId,
@@ -105,7 +99,7 @@ export class CreateOrderUseCase {
       updatedAt: now
     });
 
-    // 6. Garantir que o usuário tem balance criado
+    // 5. Garantir que o usuário tem balance criado
     let userBalance = await this.userBalanceRepository.findByUserId(request.userId);
     if (!userBalance) {
       userBalance = new UserBalance({
@@ -120,15 +114,15 @@ export class CreateOrderUseCase {
       await this.userBalanceRepository.save(userBalance);
     }
 
-    // 7. Adicionar pontos pendentes
+    // 6. Adicionar pontos pendentes
     const updatedBalance = userBalance.addPendingPoints(calculationDetails.pointsAmount);
 
-    // 8. Salvar no banco de dados
+    // 7. Salvar no banco de dados
     const savedOrder = await this.orderRepository.save(order);
     await this.pointsTransactionRepository.save(pointsTransaction);
     await this.userBalanceRepository.update(updatedBalance);
 
-    // 9. Registrar histórico inicial
+    // 8. Registrar histórico inicial
     const initialHistory = new OrderStatusHistory({
       id: uuidv4(),
       orderId: orderId,
