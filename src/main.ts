@@ -15,16 +15,17 @@ async function bootstrap() {
     }),
   );
 
+  const configService = app.get(ConfigService);
+
   // CORS
+  const corsOrigins = configService.get('CORS_ORIGINS')?.split(',') || ['http://localhost:3000'];
   app.enableCors({
-    origin: ['http://localhost:3000', 'http://localhost:3001'],
+    origin: corsOrigins,
     credentials: true,
   });
 
   // Prefixo global da API
   app.setGlobalPrefix('api');
-
-  const configService = app.get(ConfigService);
   const port = configService.get('PORT') || 3000;
 
   await app.listen(port);
