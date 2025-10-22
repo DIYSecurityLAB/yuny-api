@@ -8,7 +8,8 @@ import {
   HttpStatus, 
   HttpException,
   UseGuards,
-  Request
+  Request,
+  Inject
 } from '@nestjs/common';
 import { 
   ApiTags, 
@@ -20,6 +21,7 @@ import {
 import { Decimal } from 'decimal.js';
 
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
+import { PrismaService } from '../../../prisma/prisma.service';
 
 import { 
   CreateOrderUseCase,
@@ -44,8 +46,73 @@ export class PointsController {
   constructor(
     private readonly createOrderUseCase: CreateOrderUseCase,
     private readonly checkOrderStatusUseCase: CheckOrderStatusUseCase,
-    private readonly getTransactionHistoryUseCase: GetTransactionHistoryUseCase
+    private readonly getTransactionHistoryUseCase: GetTransactionHistoryUseCase,
+    private readonly prisma: PrismaService
   ) {}
+
+  @Get('balance')
+  @ApiOperation({
+    summary: 'Consultar saldo de pontos',
+    description: 'Retorna o saldo atual de pontos do usuário autenticado'
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Saldo consultado com sucesso',
+    schema: {
+      type: 'object',
+      properties: {
+        userId: { type: 'string', example: 'a8e3f4c1-2b3d-4e5f-6a7b-8c9d0e1f2a3b' },
+        availablePoints: { type: 'number', example: 150.00 },
+        pendingPoints: { type: 'number', example: 0.00 },
+        totalPoints: { type: 'number', example: 200.00 }
+      }
+    }
+  })
+  @ApiResponse({
+    status: HttpStatus.UNAUTHORIZED,
+    description: 'Token de autenticação inválido'
+  })
+  async getBalance(@Request() req: any) {
+    try {
+      const userId = req.user?.user_id;
+      if (!userId) {
+        throw new HttpException('User ID not found in token', HttpStatus.UNAUTHORIZED);
+      }
+
+      const balance = await this.prisma.userBalance.findUnique({
+        where: { user_id: userId },
+        select: {
+          user_id: true,
+          available_points: true,
+          pending_points: true,
+          total_points: true
+        }
+      });
+
+      if (!balance) {
+        // Se não existir saldo, retornar zero
+        return {
+          userId,
+          availablePoints: 0,
+          pendingPoints: 0,
+          totalPoints: 0
+        };
+      }
+
+      return {
+        userId: balance.user_id,
+        availablePoints: Number(balance.available_points),
+        pendingPoints: Number(balance.pending_points),
+        totalPoints: Number(balance.total_points)
+      };
+
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'Erro interno do servidor',
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
 
   @Post('orders')
   @ApiOperation({
