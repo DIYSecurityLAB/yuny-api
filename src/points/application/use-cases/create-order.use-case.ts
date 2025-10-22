@@ -144,26 +144,50 @@ export class CreateOrderUseCase {
     let alfredResponse = null;
     if (request.paymentMethod === PaymentMethod.PIX) {
       try {
+        console.log('[CreateOrder] Creating AlfredPay transaction:', {
+          orderId: orderId,
+          externalId: orderId,
+          amount: calculationDetails.totalAmount.toNumber(),
+          note: 'Sending our orderId as externalId for reference'
+        });
+
         alfredResponse = await this.alfredPayService.createTransaction({
           amount: calculationDetails.totalAmount,
           amountType: 'BRL',
-          cryptoType: 'DEPIX',
+          cryptoType: 'BITCOIN',
           cryptoAmount: calculationDetails.pointsAmount,
           paymentMethod: 'PIX',
           type: 'BUY',
           walletAddress: this.configService.get<string>('YUNY_INTERNAL_WALLET'), // Carteira interna do YunY
-          network: 'onchain',
+          network: 'liquid',
           externalId: orderId
+        });
+
+        console.log('[CreateOrder] AlfredPay response received:', {
+          ourOrderId: orderId,
+          alfredTransactionId: alfredResponse.transactionId,
+          alfredProviderId: alfredResponse.providerId,
+          alfredExternalId: alfredResponse.externalId,
+          idsMatch: alfredResponse.externalId === orderId,
+          note: 'Will save alfredTransactionId to use for polling'
         });
 
         // 11. Atualizar ordem com dados do Alfred
         const orderWithAlfredData = savedOrder.setAlfredData(
           alfredResponse.transactionId,
+          alfredResponse.providerId,
           alfredResponse.qrCopyPaste,
           alfredResponse.qrImageUrl
         );
 
         await this.orderRepository.update(orderWithAlfredData);
+
+        console.log('[CreateOrder] Order updated with AlfredPay data:', {
+          orderId: savedOrder.id,
+          savedAlfredTransactionId: orderWithAlfredData.alfredTransactionId,
+          savedAlfredProviderId: orderWithAlfredData.alfredProviderId,
+          note: 'These IDs will be used for status polling'
+        });
 
         // 12. Registrar histórico da integração com Alfred
         const alfredHistory = new OrderStatusHistory({
@@ -175,14 +199,30 @@ export class CreateOrderUseCase {
           reason: 'Alfred PIX transaction created successfully',
           metadata: {
             alfredTransactionId: alfredResponse.transactionId,
+            alfredProviderId: alfredResponse.providerId,
             qrCode: alfredResponse.qrCopyPaste,
             qrImageUrl: alfredResponse.qrImageUrl,
-            expiresAt: orderWithAlfredData.expiresAt
+            expiresAt: orderWithAlfredData.expiresAt,
+            note: 'AlfredPay transaction registered - allow 5-10 seconds before polling'
           },
           createdAt: new Date()
         });
 
         await this.orderStatusHistoryRepository.save(alfredHistory);
+
+        console.info('═══════════════════════════════════════════════════════════');
+        console.info('[CreateOrder] ✅ ORDER CREATED SUCCESSFULLY');
+        console.info('═══════════════════════════════════════════════════════════');
+        console.info('IDs Summary:');
+        console.info(`  📦 Our Order ID:       ${savedOrder.id}`);
+        console.info(`  🔑 Alfred TX ID:       ${alfredResponse.transactionId}`);
+        console.info(`  🏢 Alfred Provider ID: ${alfredResponse.providerId}`);
+        console.info('');
+        console.info('Next Steps:');
+        console.info('  1. ⏰ Wait 10 seconds before first status check');
+        console.info(`  2. 🔍 Query status using: GET /orders/${savedOrder.id}/status`);
+        console.info(`  3. 🌐 We will use Alfred TX ID (${alfredResponse.transactionId.substring(0, 8)}...) for polling`);
+        console.info('═══════════════════════════════════════════════════════════');
 
         return {
           orderId: savedOrder.id,

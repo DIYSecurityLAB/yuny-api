@@ -49,6 +49,15 @@ export class AlfredPayService implements IAlfredPayService {
         ...(request.externalId && { externalId: request.externalId })
       };
 
+      console.log('[AlfredPayService] Creating transaction:', {
+        url: `${this.baseUrl}/v2/gateway/transactions/deposit`,
+        payload: {
+          ...payload,
+          walletAddress: payload.walletAddress?.substring(0, 10) + '...' // Mascarar wallet
+        },
+        hasApiKey: !!this.apiKey
+      });
+
       const response: AxiosResponse<AlfredCreateTransactionResponse> = await firstValueFrom(
         this.httpService.post(`${this.baseUrl}/v2/gateway/transactions/deposit`, payload, {
           headers: {
@@ -58,6 +67,18 @@ export class AlfredPayService implements IAlfredPayService {
           timeout: 30000 // 30 segundos
         })
       );
+
+      console.log('[AlfredPayService] Transaction created successfully:', {
+        success: response.data.success,
+        transactionId: response.data.transactionId,
+        providerId: response.data.providerId,
+        externalId: response.data.externalId,
+        hasQrCode: !!response.data.qrCopyPaste,
+        hasQrImage: !!response.data.qrImageUrl
+      });
+
+      console.log('[AlfredPayService] 📋 FULL ALFRED RESPONSE:');
+      console.log(JSON.stringify(response.data, null, 2));
 
       if (!response.data.success) {
         throw new Error(`Alfred API returned error: ${response.data.message || 'Unknown error'}`);
@@ -72,8 +93,18 @@ export class AlfredPayService implements IAlfredPayService {
 
   async getTransactionStatus(transactionId: string): Promise<AlfredTransactionStatusResponse> {
     try {
+      const url = `${this.baseUrl}/v2/gateway/transactions/status/${transactionId}`;
+      
+      console.log('[AlfredPayService] Getting transaction status:', {
+        url,
+        transactionId,
+        baseUrl: this.baseUrl,
+        hasApiKey: !!this.apiKey,
+        apiKeyPrefix: this.apiKey?.substring(0, 10) + '...'
+      });
+
       const response: AxiosResponse<AlfredTransactionStatusResponse> = await firstValueFrom(
-        this.httpService.get(`${this.baseUrl}/v2/gateway/transactions/status/${transactionId}`, {
+        this.httpService.get(url, {
           headers: {
             'x-api-key': this.apiKey,
             'Content-Type': 'application/json'
@@ -81,6 +112,13 @@ export class AlfredPayService implements IAlfredPayService {
           timeout: 15000 // 15 segundos
         })
       );
+
+      console.log('[AlfredPayService] Transaction status response received:', {
+        transactionId,
+        status: response.data.status,
+        hasExternalId: !!response.data.externalId,
+        hasTxid: !!response.data.txid
+      });
 
       return response.data;
 
@@ -94,11 +132,18 @@ export class AlfredPayService implements IAlfredPayService {
       const axiosError = error as AxiosError;
       const status = axiosError.response?.status;
       const message = (axiosError.response?.data as any)?.message || axiosError.message;
+      const responseData = axiosError.response?.data;
       
       console.error(`[AlfredPayService] ${context}:`, {
         status,
         message,
-        data: axiosError.response?.data
+        data: responseData,
+        url: axiosError.config?.url,
+        method: axiosError.config?.method,
+        requestHeaders: {
+          hasApiKey: !!axiosError.config?.headers?.['x-api-key'],
+          contentType: axiosError.config?.headers?.['Content-Type']
+        }
       });
 
       switch (status) {

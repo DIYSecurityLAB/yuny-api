@@ -29,11 +29,23 @@ export class CheckOrderStatusUseCase {
   ) {}
 
   async execute(request: CheckOrderStatusRequest): Promise<CheckOrderStatusResponse> {
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('[CheckOrderStatus] 🔍 CHECKING ORDER STATUS');
+    console.log('═══════════════════════════════════════════════════════════');
+    
     // 1. Buscar ordem
     const order = await this.orderRepository.findById(request.orderId);
     if (!order) {
       throw new Error('Order not found');
     }
+
+    console.log('Order found:', {
+      ourOrderId: order.id,
+      alfredTransactionId: order.alfredTransactionId,
+      alfredProviderId: order.alfredProviderId,
+      currentStatus: order.status,
+      createdAt: order.createdAt
+    });
 
     let statusChanged = false;
     let updatedOrder = order;
@@ -70,8 +82,23 @@ export class CheckOrderStatusUseCase {
     // 3. Se a ordem tem transação no Alfred, consultar status
     if (order.alfredTransactionId) {
       try {
+        console.log('[CheckOrderStatus] Querying AlfredPay transaction status:', {
+          orderId: order.id,
+          alfredTransactionId: order.alfredTransactionId,
+          alfredProviderId: order.alfredProviderId,
+          note: 'Using alfredTransactionId (from AlfredPay) to query status'
+        });
+
         const alfredStatus = await this.alfredPayService.getTransactionStatus(order.alfredTransactionId);
         
+        console.log('[CheckOrderStatus] AlfredPay status received:', {
+          orderId: order.id,
+          alfredTransactionId: order.alfredTransactionId,
+          status: alfredStatus.status,
+          currentOrderStatus: order.status,
+          willUpdate: alfredStatus.status !== order.status
+        });
+
         // 3. Mapear status do Alfred para status interno
         const mappedStatus = this.mapAlfredStatusToOrderStatus(alfredStatus.status);
         
@@ -113,26 +140,76 @@ export class CheckOrderStatusUseCase {
         }
 
       } catch (error) {
-        // 7. Registrar erro de consulta no histórico
-        const errorHistory = new OrderStatusHistory({
-          id: uuidv4(),
-          orderId: order.id,
-          previousStatus: currentStatus,
-          newStatus: currentStatus, // Mantém o status atual
-          changedBy: ChangedBy.POLLING_SERVICE,
-          reason: 'Failed to check Alfred transaction status',
-          metadata: {
-            error: error.message,
-            alfredTransactionId: order.alfredTransactionId,
-            attemptedAt: new Date().toISOString()
-          },
-          createdAt: new Date()
-        });
+        // 7. Tratar erro "Transaction not found" de forma especial
+        const isTransactionNotFound = error.message?.includes('Transaction not found') || 
+                                      error.message?.includes('not found') ||
+                                      error.status === 404;
 
-        await this.orderStatusHistoryRepository.save(errorHistory);
+        if (isTransactionNotFound) {
+          // Se a transação não foi encontrada no AlfredPay, pode ser um problema de sincronização
+          // Não registrar no histórico repetidamente para evitar spam de logs
+          const recentErrorCheck = await this.orderStatusHistoryRepository.findRecentByOrderId(order.id, 1);
+          const hasRecentNotFoundError = recentErrorCheck.some(
+            h => typeof h.metadata?.error === 'string' && h.metadata.error.includes('Transaction not found') && 
+            ((new Date().getTime() - h.createdAt.getTime()) < 60000) // menos de 1 minuto atrás
+          );
 
-        // Não falha o caso de uso, apenas registra o erro
-        console.error(`Failed to check Alfred status for order ${order.id}:`, error.message);
+          if (!hasRecentNotFoundError) {
+            console.warn(`[CheckOrderStatus] ⚠️  AlfredPay transaction NOT FOUND`);
+            console.warn({
+              orderId: order.id,
+              alfredTransactionId: order.alfredTransactionId,
+              alfredProviderId: order.alfredProviderId,
+              orderCreatedAt: order.createdAt,
+              secondsSinceCreation: Math.floor((Date.now() - order.createdAt.getTime()) / 1000),
+              note: 'Transaction not found in AlfredPay. Possible reasons:',
+              reasons: [
+                '1. AlfredPay needs more time to register (wait 10+ seconds)',
+                '2. Transaction was not created successfully',
+                '3. Wrong API key or environment (sandbox vs production)',
+                '4. TransactionId mismatch or corruption'
+              ]
+            });
+            
+            const errorHistory = new OrderStatusHistory({
+              id: uuidv4(),
+              orderId: order.id,
+              previousStatus: currentStatus,
+              newStatus: currentStatus,
+              changedBy: ChangedBy.POLLING_SERVICE,
+              reason: 'Alfred transaction not found (may need time to sync)',
+              metadata: {
+                error: 'Transaction not found in AlfredPay',
+                alfredTransactionId: order.alfredTransactionId,
+                attemptedAt: new Date().toISOString(),
+                note: 'AlfredPay may need a few seconds to register the transaction'
+              },
+              createdAt: new Date()
+            });
+
+            await this.orderStatusHistoryRepository.save(errorHistory);
+          }
+        } else {
+          // Outros erros (timeout, conexão, etc)
+          const errorHistory = new OrderStatusHistory({
+            id: uuidv4(),
+            orderId: order.id,
+            previousStatus: currentStatus,
+            newStatus: currentStatus,
+            changedBy: ChangedBy.POLLING_SERVICE,
+            reason: 'Failed to check Alfred transaction status',
+            metadata: {
+              error: error.message,
+              errorStatus: error.status,
+              alfredTransactionId: order.alfredTransactionId,
+              attemptedAt: new Date().toISOString()
+            },
+            createdAt: new Date()
+          });
+
+          await this.orderStatusHistoryRepository.save(errorHistory);
+          console.error(`[CheckOrderStatus] Error checking Alfred status for order ${order.id}:`, error.message);
+        }
       }
     }
 
@@ -165,6 +242,15 @@ export class CheckOrderStatusUseCase {
       await this.orderStatusHistoryRepository.save(expiredHistory);
     }
 
+    console.log('[CheckOrderStatus] ✅ Status check completed');
+    console.log({
+      orderId: updatedOrder.id,
+      status: updatedOrder.status,
+      statusChanged,
+      alfredTransactionId: updatedOrder.alfredTransactionId
+    });
+    console.log('═══════════════════════════════════════════════════════════');
+
     return {
       orderId: updatedOrder.id,
       currentStatus: updatedOrder.status,
@@ -179,20 +265,26 @@ export class CheckOrderStatusUseCase {
   }
 
   private mapAlfredStatusToOrderStatus(alfredStatus: string): OrderStatus {
-    switch (alfredStatus) {
-      case 'PENDING':
+    // AlfredPay retorna status em lowercase
+    const status = alfredStatus.toLowerCase();
+    
+    switch (status) {
+      case 'pending':
         return OrderStatus.PENDING;
-      case 'PROCESSING':
+      case 'awaiting_confirmation':
         return OrderStatus.PROCESSING;
-      case 'COMPLETED':
+      case 'paid':
+      case 'complete':
         return OrderStatus.COMPLETED;
-      case 'FAILED':
-        return OrderStatus.FAILED;
-      case 'CANCELLED':
-        return OrderStatus.CANCELLED;
-      case 'EXPIRED':
+      case 'review':
+        return OrderStatus.PROCESSING;
+      case 'expired':
         return OrderStatus.EXPIRED;
+      case 'refunded':
+      case 'canceled':
+        return OrderStatus.CANCELLED;
       default:
+        console.warn(`[CheckOrderStatus] Unknown AlfredPay status: ${alfredStatus}`);
         return OrderStatus.PENDING; // Default para status desconhecidos
     }
   }

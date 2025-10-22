@@ -29,6 +29,16 @@ export class PrismaOrderStatusHistoryRepository implements IOrderStatusHistoryRe
     return histories.map(history => this.toDomainEntity(history));
   }
 
+  async findRecentByOrderId(orderId: string, limit: number): Promise<OrderStatusHistory[]> {
+    const histories = await this.prisma.orderStatusHistory.findMany({
+      where: { order_id: orderId },
+      orderBy: { created_at: 'desc' },
+      take: limit
+    });
+
+    return histories.map(history => this.toDomainEntity(history));
+  }
+
   async findByUserId(userId: string): Promise<OrderStatusHistory[]> {
     // Precisa fazer join com a tabela de orders para buscar por userId
     const histories = await this.prisma.orderStatusHistory.findMany({

@@ -11,6 +11,7 @@ export class Order {
   public readonly status: OrderStatus;
   public readonly paymentMethod: PaymentMethod;
   public readonly alfredTransactionId: string | null;
+  public readonly alfredProviderId: string | null;
   public readonly qrCode: string | null;
   public readonly qrImageUrl: string | null;
   public readonly expiresAt: Date | null;
@@ -28,6 +29,7 @@ export class Order {
     status: OrderStatus;
     paymentMethod: PaymentMethod;
     alfredTransactionId?: string | null;
+    alfredProviderId?: string | null;
     qrCode?: string | null;
     qrImageUrl?: string | null;
     expiresAt?: Date | null;
@@ -44,6 +46,7 @@ export class Order {
     this.status = props.status;
     this.paymentMethod = props.paymentMethod;
     this.alfredTransactionId = props.alfredTransactionId || null;
+    this.alfredProviderId = props.alfredProviderId || null;
     this.qrCode = props.qrCode || null;
     this.qrImageUrl = props.qrImageUrl || null;
     this.expiresAt = props.expiresAt || null;
@@ -98,10 +101,11 @@ export class Order {
     });
   }
 
-  public setAlfredData(transactionId: string, qrCode: string, qrImageUrl: string): Order {
+  public setAlfredData(transactionId: string, providerId: string, qrCode: string, qrImageUrl: string): Order {
     return new Order({
       ...this,
       alfredTransactionId: transactionId,
+      alfredProviderId: providerId,
       qrCode,
       qrImageUrl,
       expiresAt: new Date(Date.now() + 20 * 60 * 1000), // 20 minutes

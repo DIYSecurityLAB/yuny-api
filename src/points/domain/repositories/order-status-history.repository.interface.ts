@@ -4,6 +4,7 @@ import { OrderStatus, ChangedBy } from '../enums';
 export interface IOrderStatusHistoryRepository {
   findById(id: string): Promise<OrderStatusHistory | null>;
   findByOrderId(orderId: string): Promise<OrderStatusHistory[]>;
+  findRecentByOrderId(orderId: string, limit: number): Promise<OrderStatusHistory[]>;
   findByUserId(userId: string): Promise<OrderStatusHistory[]>;
   findByStatus(status: OrderStatus): Promise<OrderStatusHistory[]>;
   findByChangedBy(changedBy: ChangedBy): Promise<OrderStatusHistory[]>;

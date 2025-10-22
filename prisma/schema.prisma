@@ -269,6 +269,7 @@ model Order {
   status                OrderStatus   @default(PENDING)
   payment_method        PaymentMethod
   alfred_transaction_id String?       @db.VarChar(255)
+  alfred_provider_id    String?       @db.VarChar(255)
   qr_code               String?       @db.Text
   qr_image_url          String?       @db.Text
   expires_at            DateTime?     @db.Timestamp(6)
@@ -283,6 +284,7 @@ model Order {
   @@index([user_id])
   @@index([status])
   @@index([alfred_transaction_id])
+  @@index([alfred_provider_id])
   @@index([expires_at])
   @@index([created_at])
   @@map("orders")
