@@ -17,6 +17,7 @@ import { OrderStatusHistory } from '../../domain/entities';
 import { OrderStatus, ChangedBy } from '../../domain/enums';
 import { IAlfredPayService } from '../../infrastructure/services/alfred-pay-service.interface';
 import { CheckOrderStatusRequest, CheckOrderStatusResponse } from '../dto';
+import { CreditPointsUseCase } from './credit-points.use-case';
 
 @Injectable()
 export class CheckOrderStatusUseCase {
@@ -25,7 +26,8 @@ export class CheckOrderStatusUseCase {
     @Inject(ORDER_STATUS_HISTORY_REPOSITORY) private readonly orderStatusHistoryRepository: IOrderStatusHistoryRepository,
     @Inject(WEBHOOK_LOG_REPOSITORY) private readonly webhookLogRepository: IWebhookLogRepository,
     @Inject(ALFRED_PAY_SERVICE) private readonly alfredPayService: IAlfredPayService,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    private readonly creditPointsUseCase: CreditPointsUseCase
   ) {}
 
   async execute(request: CheckOrderStatusRequest): Promise<CheckOrderStatusResponse> {
@@ -137,6 +139,62 @@ export class CheckOrderStatusUseCase {
           });
 
           await this.orderStatusHistoryRepository.save(statusHistory);
+
+          // 7. Se o status mudou para COMPLETED, creditar pontos automaticamente
+          if (mappedStatus === OrderStatus.COMPLETED) {
+            try {
+              console.log('[CheckOrderStatus] 💰 Order completed - crediting points automatically');
+              console.log({
+                orderId: order.id,
+                alfredTransactionId: order.alfredTransactionId,
+                pointsAmount: order.pointsAmount.toString()
+              });
+
+              const creditResult = await this.creditPointsUseCase.execute({
+                orderId: order.id,
+                alfredTransactionId: order.alfredTransactionId || '',
+                metadata: {
+                  triggeredBy: 'CheckOrderStatusUseCase',
+                  alfredStatus: alfredStatus.status,
+                  autoCredited: true,
+                  creditedAt: new Date().toISOString()
+                }
+              });
+
+              console.log('[CheckOrderStatus] ✅ Points credited successfully:', {
+                orderId: order.id,
+                pointsAmount: order.pointsAmount.toString(),
+                newAvailableBalance: creditResult.newAvailableBalance.toString(),
+                transactionId: creditResult.transactionId
+              });
+
+            } catch (creditError) {
+              console.error('[CheckOrderStatus] ❌ Failed to credit points:', {
+                orderId: order.id,
+                error: creditError.message,
+                alfredTransactionId: order.alfredTransactionId
+              });
+              
+              // Registrar falha no histórico mas não interromper o fluxo
+              const creditFailureHistory = new OrderStatusHistory({
+                id: uuidv4(),
+                orderId: order.id,
+                previousStatus: mappedStatus,
+                newStatus: mappedStatus, // Status não muda
+                changedBy: ChangedBy.SYSTEM,
+                reason: 'Failed to credit points after order completion',
+                metadata: {
+                  error: creditError.message,
+                  alfredTransactionId: order.alfredTransactionId,
+                  failedAt: new Date().toISOString(),
+                  pointsAmount: order.pointsAmount.toString()
+                },
+                createdAt: new Date()
+              });
+
+              await this.orderStatusHistoryRepository.save(creditFailureHistory);
+            }
+          }
         }
 
       } catch (error) {
