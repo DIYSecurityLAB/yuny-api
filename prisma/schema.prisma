@@ -23,6 +23,7 @@ model Usuario {
   refreshTokens          RefreshToken[]
   apiKeys               ApiKey[]
   passwordResetTokens   PasswordResetToken[]
+  userBalance           UserBalance?
 
   @@map("usuarios")
 }
@@ -239,4 +240,154 @@ enum PasswordResetStatus {
   USED
   EXPIRED
   REVOKED
+}
+
+// Points System Models
+model UserBalance {
+  id               String   @id @default(uuid()) @db.Uuid
+  user_id          String   @unique @db.Uuid
+  available_points Decimal  @default(0) @db.Decimal(15, 2)
+  pending_points   Decimal  @default(0) @db.Decimal(15, 2)
+  total_points     Decimal  @default(0) @db.Decimal(15, 2)
+  created_at       DateTime @default(now()) @db.Timestamp(6)
+  updated_at       DateTime @updatedAt @db.Timestamp(6)
+
+  usuario Usuario @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+  orders  Order[]
+
+  @@index([user_id])
+  @@map("user_balances")
+}
+
+model Order {
+  id                    String        @id @default(uuid()) @db.Uuid
+  user_id               String        @db.Uuid
+  requested_amount      Decimal       @db.Decimal(15, 2)
+  fee_amount            Decimal       @db.Decimal(15, 2)
+  total_amount          Decimal       @db.Decimal(15, 2)
+  points_amount         Decimal       @db.Decimal(15, 2)
+  status                OrderStatus   @default(PENDING)
+  payment_method        PaymentMethod
+  alfred_transaction_id String?       @db.VarChar(255)
+  alfred_provider_id    String?       @db.VarChar(255)
+  qr_code               String?       @db.Text
+  qr_image_url          String?       @db.Text
+  expires_at            DateTime?     @db.Timestamp(6)
+  metadata              Json?
+  created_at            DateTime      @default(now()) @db.Timestamp(6)
+  updated_at            DateTime      @updatedAt @db.Timestamp(6)
+
+  userBalance           UserBalance             @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+  pointsTransactions    PointsTransaction[]
+  statusHistory         OrderStatusHistory[]
+
+  @@index([user_id])
+  @@index([status])
+  @@index([alfred_transaction_id])
+  @@index([alfred_provider_id])
+  @@index([expires_at])
+  @@index([created_at])
+  @@map("orders")
+}
+
+model PointsTransaction {
+  id          String                  @id @default(uuid()) @db.Uuid
+  user_id     String                  @db.Uuid
+  order_id    String?                 @db.Uuid
+  type        PointsTransactionType
+  amount      Decimal                 @db.Decimal(15, 2)
+  description String                  @db.VarChar(500)
+  metadata    Json?
+  created_at  DateTime                @default(now()) @db.Timestamp(6)
+  updated_at  DateTime                @updatedAt @db.Timestamp(6)
+
+  order Order? @relation(fields: [order_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id])
+  @@index([order_id])
+  @@index([type])
+  @@index([created_at])
+  @@map("points_transactions")
+}
+
+model OrderStatusHistory {
+  id              String      @id @default(uuid()) @db.Uuid
+  order_id        String      @db.Uuid
+  previous_status OrderStatus?
+  new_status      OrderStatus
+  changed_by      ChangedBy
+  reason          String      @db.VarChar(500)
+  metadata        Json?
+  created_at      DateTime    @default(now()) @db.Timestamp(6)
+
+  order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)
+
+  @@index([order_id])
+  @@index([new_status])
+  @@index([changed_by])
+  @@index([created_at])
+  @@map("order_status_history")
+}
+
+model WebhookLog {
+  id                String    @id @default(uuid()) @db.Uuid
+  webhook_id        String?   @db.VarChar(255) // ID do webhook para idempotência
+  transaction_id    String    @db.VarChar(255) // ID da transação no AlfredPay
+  external_id       String    @db.VarChar(255) // Nosso orderId
+  status            String    @db.VarChar(50)  // Status da transação
+  previous_status   String?   @db.VarChar(50)  // Status anterior
+  payload           Json      // Payload completo do webhook
+  signature         String    @db.VarChar(255) // Assinatura HMAC
+  processed_at      DateTime  @default(now()) @db.Timestamp(6)
+  is_valid          Boolean   @default(false)
+  error_message     String?   @db.Text // Mensagem de erro se houver
+  processing_time_ms Int?     // Tempo de processamento em ms
+  created_at        DateTime  @default(now()) @db.Timestamp(6)
+
+  // Índices para performance
+  @@index([transaction_id])
+  @@index([external_id])
+  @@index([webhook_id])
+  @@index([processed_at])
+  @@index([is_valid])
+  @@index([created_at])
+  @@map("webhook_logs")
+}
+
+// Points System Enums
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+enum PointsTransactionType {
+  CREDIT
+  DEBIT
+  PENDING
+  REFUND
+}
+
+enum PaymentMethod {
+  PIX
+  CARD
+  BANK_TRANSFER
+  CRYPTO
+  WISE
+  TICKET
+  USDT
+  PAYPAL
+  SWIFT
+  NOMAD
+}
+
+enum ChangedBy {
+  USER
+  SYSTEM
+  ADMIN
+  ALFRED_WEBHOOK
+  POLLING_SERVICE
 }

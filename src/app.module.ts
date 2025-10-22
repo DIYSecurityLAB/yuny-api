@@ -4,6 +4,7 @@ import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UserModule } from './user/user.module';
 import { ApiKeyModule } from './api-key/api-key.module';
+import { PointsModule } from './points/points.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { ApiKeyModule } from './api-key/api-key.module';
     AuthModule,
     UserModule,
     ApiKeyModule,
+    PointsModule,
   ],
 })
 export class AppModule {}

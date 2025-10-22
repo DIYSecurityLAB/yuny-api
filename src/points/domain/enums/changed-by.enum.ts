@@ -1,0 +1,7 @@
+export enum ChangedBy {
+  USER = 'USER',
+  SYSTEM = 'SYSTEM',
+  ADMIN = 'ADMIN',
+  ALFRED_WEBHOOK = 'ALFRED_WEBHOOK',
+  POLLING_SERVICE = 'POLLING_SERVICE'
+}
